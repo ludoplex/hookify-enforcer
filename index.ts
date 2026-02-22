@@ -10,6 +10,11 @@ type Cfg = {
   cooldownSec: number;
   blockedExecRegexes: string[];
   allowExecRegexes: string[];
+  enforceAllExec: boolean;
+  execRequireRegexes: string[];
+  messageBlockRegexes: string[];
+  messageAllowRegexes: string[];
+  blockReasoningRegexes: string[];
 };
 
 const ROOT = "/home/user/.openclaw/workspace";
@@ -39,7 +44,12 @@ function cfgFromPlugin(pluginConfig: Record<string, unknown> | undefined): Cfg {
     readTtlSec: Number((pc.readTtlSec as number | undefined) ?? envTtl),
     cooldownSec: Number((pc.cooldownSec as number | undefined) ?? envCooldown),
     blockedExecRegexes: (pc.blockedExecRegexes as string[] | undefined) ?? DEFAULT_BLOCKLIST,
-    allowExecRegexes: (pc.allowExecRegexes as string[] | undefined) ?? []
+    allowExecRegexes: (pc.allowExecRegexes as string[] | undefined) ?? [],
+    enforceAllExec: (pc.enforceAllExec as boolean | undefined) ?? false,
+    execRequireRegexes: (pc.execRequireRegexes as string[] | undefined) ?? [],
+    messageBlockRegexes: (pc.messageBlockRegexes as string[] | undefined) ?? [],
+    messageAllowRegexes: (pc.messageAllowRegexes as string[] | undefined) ?? [],
+    blockReasoningRegexes: (pc.blockReasoningRegexes as string[] | undefined) ?? []
   };
 }
 
@@ -62,19 +72,14 @@ function saveState(st: { readMarks: Record<string, number>; lastMutate: Record<s
 }
 
 const normalizePath = (p: string) => path.resolve(p);
-
-function rxList(patterns: string[]): RegExp[] {
-  return patterns.map((p) => new RegExp(p));
-}
+const rxList = (patterns: string[]) => patterns.map((p) => new RegExp(p));
 
 function parseGuardOp(cmd: string, cfg: Cfg): { op?: string; file?: string } {
   const esc = cfg.guardToolPattern;
   const capture = `(?:"([^\"]+)"|'([^']+)'|(\\S+))`;
-
   const readRx = new RegExp(`${esc}\\s+${cfg.readMarkOp}\\s+${capture}`);
   const mRead = cmd.match(readRx);
   if (mRead) return { op: cfg.readMarkOp, file: mRead[1] || mRead[2] || mRead[3] };
-
   for (const op of cfg.mutateOps) {
     const r = new RegExp(`${esc}\\s+${op}\\s+${capture}`);
     const m = cmd.match(r);
@@ -83,16 +88,39 @@ function parseGuardOp(cmd: string, cfg: Cfg): { op?: string; file?: string } {
   return {};
 }
 
+function msgToText(message: unknown): string {
+  try {
+    if (!message || typeof message !== 'object') return '';
+    const m: any = message;
+    const c = m.content;
+    if (typeof c === 'string') return c;
+    if (Array.isArray(c)) {
+      return c.map((b: any) => {
+        if (!b || typeof b !== 'object') return '';
+        if (typeof b.text === 'string') return b.text;
+        if (typeof b.thinking === 'string') return `[thinking] ${b.thinking}`;
+        return '';
+      }).join('\n');
+    }
+    return JSON.stringify(message);
+  } catch {
+    return '';
+  }
+}
+
 export default function register(api: any) {
   const cfg = cfgFromPlugin(api.pluginConfig);
   const blocked = rxList(cfg.blockedExecRegexes);
   const allowed = rxList(cfg.allowExecRegexes);
+  const required = rxList(cfg.execRequireRegexes);
+  const msgBlock = rxList(cfg.messageBlockRegexes);
+  const msgAllow = rxList(cfg.messageAllowRegexes);
+  const reasonBlock = rxList(cfg.blockReasoningRegexes);
 
   api.registerHook(
     "before_tool_call",
     (event: { toolName: string; params: Record<string, unknown> }) => {
-      if (!cfg.enabled) return;
-      if (event.toolName !== "exec") return;
+      if (!cfg.enabled || event.toolName !== "exec") return;
       const cmd = typeof event.params.command === "string" ? event.params.command : "";
       if (!cmd) return;
 
@@ -117,23 +145,40 @@ export default function register(api: any) {
         }
         const lm = st.lastMutate[p];
         if (lm && now - lm < cfg.cooldownSec) {
-          return {
-            block: true,
-            blockReason: `opseq blocked: cooldown active for ${p} (${cfg.cooldownSec - (now - lm)}s left)`
-          };
+          return { block: true, blockReason: `opseq blocked: cooldown active for ${p} (${cfg.cooldownSec - (now - lm)}s left)` };
         }
         st.lastMutate[p] = now;
         saveState(st);
         return;
       }
 
+      if (cfg.enforceAllExec) {
+        if (required.length > 0 && !required.every((r) => r.test(cmd))) {
+          return { block: true, blockReason: "Blocked by hookify-enforcer: exec missing required regex conditions." };
+        }
+      }
+
       if (blocked.some((r) => r.test(cmd))) {
-        return {
-          block: true,
-          blockReason: "Blocked by hookify-enforcer: exec mutation must use configured op-sequence."
-        };
+        return { block: true, blockReason: "Blocked by hookify-enforcer: exec command matched blocked patterns." };
       }
     },
     { name: "hookify-before-tool-call", priority: 1000 }
+  );
+
+  api.registerHook(
+    "before_message_write",
+    (event: { message: unknown }) => {
+      if (!cfg.enabled) return;
+      const text = msgToText(event.message);
+      if (!text) return;
+      if (msgAllow.some((r) => r.test(text))) return;
+      if (msgBlock.some((r) => r.test(text))) {
+        return { block: true };
+      }
+      if (reasonBlock.some((r) => r.test(text))) {
+        return { block: true };
+      }
+    },
+    { name: "hookify-before-message-write", priority: 1000 }
   );
 }
