@@ -1,4 +1,4 @@
-# hookify-enforcer
+# openclaw-plugin-hookify-enforcer
 
 OpenClaw plugin that enforces hard tool-call sequencing for file mutation via `before_tool_call`.
 
