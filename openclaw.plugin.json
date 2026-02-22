@@ -1,0 +1,11 @@
+{
+  "id": "hookify-enforcer",
+  "name": "Hookify Hard Enforcer",
+  "description": "Hard tool-sequence enforcement via before_tool_call",
+  "version": "0.1.0",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
