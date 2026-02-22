@@ -18,6 +18,11 @@ type Cfg = {
   requireVerificationForSpawn: boolean;
   verificationStampPath: string;
   verificationMaxAgeSec: number;
+  strictMode: boolean;
+  strictAllowedExecRegexes: string[];
+  strictRequireDoctorOk: boolean;
+  strictRequirePluginsDoctorOk: boolean;
+  strictRequireHooksCheckOk: boolean;
 };
 
 const ROOT = "/home/user/.openclaw/workspace";
@@ -55,7 +60,12 @@ function cfgFromPlugin(pluginConfig: Record<string, unknown> | undefined): Cfg {
     blockReasoningRegexes: (pc.blockReasoningRegexes as string[] | undefined) ?? [],
     requireVerificationForSpawn: (pc.requireVerificationForSpawn as boolean | undefined) ?? false,
     verificationStampPath: (pc.verificationStampPath as string | undefined) ?? path.join(ROOT, ".enforcer", "hookify-verified.json"),
-    verificationMaxAgeSec: Number((pc.verificationMaxAgeSec as number | undefined) ?? 3600)
+    verificationMaxAgeSec: Number((pc.verificationMaxAgeSec as number | undefined) ?? 3600),
+    strictMode: (pc.strictMode as boolean | undefined) ?? false,
+    strictAllowedExecRegexes: (pc.strictAllowedExecRegexes as string[] | undefined) ?? ["^openclaw doctor\\b", "^openclaw plugins doctor\\b", "^openclaw hooks check\\b", "^scripts/verify-runtime\\.sh\\b"],
+    strictRequireDoctorOk: (pc.strictRequireDoctorOk as boolean | undefined) ?? true,
+    strictRequirePluginsDoctorOk: (pc.strictRequirePluginsDoctorOk as boolean | undefined) ?? true,
+    strictRequireHooksCheckOk: (pc.strictRequireHooksCheckOk as boolean | undefined) ?? true
   };
 }
 
@@ -115,6 +125,17 @@ function msgToText(message: unknown): string {
 }
 
 
+
+function readVerification(stampPath: string): {ok:boolean; doctorOk?:boolean; pluginsDoctorOk?:boolean; hooksCheckOk?:boolean; verifiedAtEpochSec?:number} {
+  try {
+    const raw = fs.readFileSync(stampPath, "utf8");
+    const parsed = JSON.parse(raw);
+    return { ok: true, doctorOk: !!parsed?.doctorOk, pluginsDoctorOk: !!parsed?.pluginsDoctorOk, hooksCheckOk: !!parsed?.hooksCheckOk, verifiedAtEpochSec: Number(parsed?.verifiedAtEpochSec ?? 0) };
+  } catch {
+    return { ok: false };
+  }
+}
+
 function verificationFresh(stampPath: string, maxAgeSec: number): boolean {
   try {
     const raw = fs.readFileSync(stampPath, "utf8");
@@ -140,6 +161,19 @@ export default function register(api: any) {
     "before_tool_call",
     (event: { toolName: string; params: Record<string, unknown> }) => {
       if (!cfg.enabled) return;
+      if (event.toolName === "exec" && cfg.strictMode) {
+        const cmdStrict = typeof event.params.command === "string" ? event.params.command : "";
+        const strictAllowed = rxList(cfg.strictAllowedExecRegexes);
+        const v = readVerification(cfg.verificationStampPath);
+        const fresh = verificationFresh(cfg.verificationStampPath, cfg.verificationMaxAgeSec);
+        const doctorOk = !cfg.strictRequireDoctorOk || v.doctorOk === true;
+        const pluginsDoctorOk = !cfg.strictRequirePluginsDoctorOk || v.pluginsDoctorOk === true;
+        const hooksCheckOk = !cfg.strictRequireHooksCheckOk || v.hooksCheckOk === true;
+        const strictReady = v.ok && fresh && doctorOk && pluginsDoctorOk && hooksCheckOk;
+        if (!strictReady && !strictAllowed.some((r) => r.test(cmdStrict))) {
+          return { block: true, blockReason: "Blocked by hookify-enforcer strictMode: diagnostics/verification not satisfied." };
+        }
+      }
       if (event.toolName === "sessions_spawn" && cfg.requireVerificationForSpawn) {
         if (!verificationFresh(cfg.verificationStampPath, cfg.verificationMaxAgeSec)) {
           return { block: true, blockReason: "Blocked by hookify-enforcer: sessions_spawn requires fresh verification stamp." };

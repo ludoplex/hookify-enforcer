@@ -47,3 +47,24 @@ from pathlib import Path
 Path("$STAMP_FILE").write_text(json.dumps({"verifiedAtEpochSec": int(time.time())}, indent=2))
 print("stamp written:", "$STAMP_FILE")
 PY
+
+DOCTOR_OK=true
+PLUGINS_OK=true
+HOOKS_OK=true
+openclaw doctor --non-interactive >/tmp/hookify_doctor.out 2>&1 || DOCTOR_OK=false
+openclaw plugins doctor >/tmp/hookify_plugins_doctor.out 2>&1 || PLUGINS_OK=false
+openclaw hooks check >/tmp/hookify_hooks_check.out 2>&1 || HOOKS_OK=false
+STAMP_DIR="/home/user/.openclaw/workspace/.enforcer"
+mkdir -p "$STAMP_DIR"
+STAMP_FILE="$STAMP_DIR/hookify-verified.json"
+python3 - <<PY2
+import json, time
+from pathlib import Path
+Path("$STAMP_FILE").write_text(json.dumps({
+  "verifiedAtEpochSec": int(time.time()),
+  "doctorOk": "$DOCTOR_OK" == "true",
+  "pluginsDoctorOk": "$PLUGINS_OK" == "true",
+  "hooksCheckOk": "$HOOKS_OK" == "true"
+}, indent=2))
+print("stamp written:", "$STAMP_FILE")
+PY2
