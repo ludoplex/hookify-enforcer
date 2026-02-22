@@ -102,6 +102,6 @@ export default function register(api: any) {
         };
       }
     },
-    { priority: 1000 }
+    { name: "hookify-before-tool-call", priority: 1000 }
   );
 }
