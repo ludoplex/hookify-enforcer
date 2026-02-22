@@ -37,3 +37,13 @@ mkdir -p "$(dirname "$OUT")"
 } > "$OUT"
 
 echo "$OUT"
+
+STAMP_DIR="/home/user/.openclaw/workspace/.enforcer"
+mkdir -p "$STAMP_DIR"
+STAMP_FILE="$STAMP_DIR/hookify-verified.json"
+python3 - <<PY
+import json, time
+from pathlib import Path
+Path("$STAMP_FILE").write_text(json.dumps({"verifiedAtEpochSec": int(time.time())}, indent=2))
+print("stamp written:", "$STAMP_FILE")
+PY

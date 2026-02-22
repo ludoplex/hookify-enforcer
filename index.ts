@@ -15,6 +15,9 @@ type Cfg = {
   messageBlockRegexes: string[];
   messageAllowRegexes: string[];
   blockReasoningRegexes: string[];
+  requireVerificationForSpawn: boolean;
+  verificationStampPath: string;
+  verificationMaxAgeSec: number;
 };
 
 const ROOT = "/home/user/.openclaw/workspace";
@@ -49,7 +52,10 @@ function cfgFromPlugin(pluginConfig: Record<string, unknown> | undefined): Cfg {
     execRequireRegexes: (pc.execRequireRegexes as string[] | undefined) ?? [],
     messageBlockRegexes: (pc.messageBlockRegexes as string[] | undefined) ?? [],
     messageAllowRegexes: (pc.messageAllowRegexes as string[] | undefined) ?? [],
-    blockReasoningRegexes: (pc.blockReasoningRegexes as string[] | undefined) ?? []
+    blockReasoningRegexes: (pc.blockReasoningRegexes as string[] | undefined) ?? [],
+    requireVerificationForSpawn: (pc.requireVerificationForSpawn as boolean | undefined) ?? false,
+    verificationStampPath: (pc.verificationStampPath as string | undefined) ?? path.join(ROOT, ".enforcer", "hookify-verified.json"),
+    verificationMaxAgeSec: Number((pc.verificationMaxAgeSec as number | undefined) ?? 3600)
   };
 }
 
@@ -108,6 +114,19 @@ function msgToText(message: unknown): string {
   }
 }
 
+
+function verificationFresh(stampPath: string, maxAgeSec: number): boolean {
+  try {
+    const raw = fs.readFileSync(stampPath, "utf8");
+    const parsed = JSON.parse(raw);
+    const ts = Number(parsed?.verifiedAtEpochSec ?? 0);
+    if (!ts) return false;
+    return (Math.floor(Date.now()/1000) - ts) <= maxAgeSec;
+  } catch {
+    return false;
+  }
+}
+
 export default function register(api: any) {
   const cfg = cfgFromPlugin(api.pluginConfig);
   const blocked = rxList(cfg.blockedExecRegexes);
@@ -120,7 +139,14 @@ export default function register(api: any) {
   api.registerHook(
     "before_tool_call",
     (event: { toolName: string; params: Record<string, unknown> }) => {
-      if (!cfg.enabled || event.toolName !== "exec") return;
+      if (!cfg.enabled) return;
+      if (event.toolName === "sessions_spawn" && cfg.requireVerificationForSpawn) {
+        if (!verificationFresh(cfg.verificationStampPath, cfg.verificationMaxAgeSec)) {
+          return { block: true, blockReason: "Blocked by hookify-enforcer: sessions_spawn requires fresh verification stamp." };
+        }
+        return;
+      }
+      if (event.toolName !== "exec") return;
       const cmd = typeof event.params.command === "string" ? event.params.command : "";
       if (!cmd) return;
 

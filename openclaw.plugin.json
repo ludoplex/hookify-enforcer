@@ -78,6 +78,18 @@
         "items": {
           "type": "string"
         }
+      },
+      "requireVerificationForSpawn": {
+        "type": "boolean",
+        "default": false
+      },
+      "verificationStampPath": {
+        "type": "string"
+      },
+      "verificationMaxAgeSec": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 3600
       }
     }
   }
