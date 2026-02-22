@@ -29,6 +29,12 @@ const ROOT = "/home/user/.openclaw/workspace";
 const STATE_DIR = path.join(ROOT, ".enforcer");
 const STATE_FILE = path.join(STATE_DIR, "opseq-state.json");
 
+
+function safePositiveInt(value: unknown, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
 const DEFAULT_BLOCKLIST = [
   "\\brm\\b",
   "\\bmv\\b",
@@ -49,8 +55,8 @@ function cfgFromPlugin(pluginConfig: Record<string, unknown> | undefined): Cfg {
     guardToolPattern: (pc.guardToolPattern as string | undefined) ?? "opseq_guard\\.py",
     readMarkOp: (pc.readMarkOp as string | undefined) ?? "read-mark",
     mutateOps: (pc.mutateOps as string[] | undefined) ?? ["append", "insert-after"],
-    readTtlSec: Number((pc.readTtlSec as number | undefined) ?? envTtl),
-    cooldownSec: Number((pc.cooldownSec as number | undefined) ?? envCooldown),
+    readTtlSec: safePositiveInt(pc.readTtlSec, envTtl),
+    cooldownSec: Math.max(0, Number.isFinite(Number(pc.cooldownSec)) ? Math.floor(Number(pc.cooldownSec)) : envCooldown),
     blockedExecRegexes: (pc.blockedExecRegexes as string[] | undefined) ?? DEFAULT_BLOCKLIST,
     allowExecRegexes: (pc.allowExecRegexes as string[] | undefined) ?? [],
     enforceAllExec: (pc.enforceAllExec as boolean | undefined) ?? false,
@@ -60,7 +66,7 @@ function cfgFromPlugin(pluginConfig: Record<string, unknown> | undefined): Cfg {
     blockReasoningRegexes: (pc.blockReasoningRegexes as string[] | undefined) ?? [],
     requireVerificationForSpawn: (pc.requireVerificationForSpawn as boolean | undefined) ?? false,
     verificationStampPath: (pc.verificationStampPath as string | undefined) ?? path.join(ROOT, ".enforcer", "hookify-verified.json"),
-    verificationMaxAgeSec: Number((pc.verificationMaxAgeSec as number | undefined) ?? 3600),
+    verificationMaxAgeSec: safePositiveInt(pc.verificationMaxAgeSec, 3600),
     strictMode: (pc.strictMode as boolean | undefined) ?? false,
     strictAllowedExecRegexes: (pc.strictAllowedExecRegexes as string[] | undefined) ?? ["^openclaw doctor\\b", "^openclaw plugins doctor\\b", "^openclaw hooks check\\b", "^scripts/verify-runtime\\.sh\\b"],
     strictRequireDoctorOk: (pc.strictRequireDoctorOk as boolean | undefined) ?? true,

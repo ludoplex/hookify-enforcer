@@ -10,16 +10,17 @@ mkdir -p "$(dirname "$OUT")"
   echo "Generated: $(date -Is)"
   echo
   echo "## 1) Plugin discovery"
-  openclaw plugins info hookify-enforcer || true
+  PLUGIN_INFO=$(openclaw plugins info hookify-enforcer 2>&1 || true)
+  echo "$PLUGIN_INFO"
   echo
   echo "## 2) Doctor snapshot"
   openclaw doctor --non-interactive || true
   echo
   echo "## 3) Hook registration check"
-  openclaw plugins info hookify-enforcer | grep -E "Hooks:" || true
+  echo "$PLUGIN_INFO" | grep -E "Hooks:" || true
   echo
   echo "## 4) Runtime probe (direct CLI exec path)"
-  TMPF="/tmp/hookify_runtime_probe_$$.txt"
+  TMPF=$(mktemp /tmp/hookify_runtime_probe.XXXXXX)
   set +e
   echo PROBE > "$TMPF"
   RC=$?
@@ -31,6 +32,12 @@ mkdir -p "$(dirname "$OUT")"
   fi
   rm -f "$TMPF"
   echo
+  echo "## 4b) Runtime probe caveat"
+  echo "- Direct shell probes validate OS-level write behavior, not agent hook interception path."
+  echo "- Representative OpenClaw command executed for context:"
+  openclaw plugins info hookify-enforcer >/tmp/hookify_repr.out 2>&1 || true
+  sed -n "1,5p" /tmp/hookify_repr.out
+
   echo "## 5) Conclusion"
   echo "- Plugin load/registration status is validated above."
   echo "- Use this report to distinguish discovery/load failures from runtime path bypass issues."
@@ -38,9 +45,9 @@ mkdir -p "$(dirname "$OUT")"
 
 echo "$OUT"
 
-STAMP_DIR="/home/user/.openclaw/workspace/.enforcer"
+STAMP_FILE="${HOOKIFY_VERIFICATION_STAMP_PATH:-/home/user/.openclaw/workspace/.enforcer/hookify-verified.json}"
+STAMP_DIR="$(dirname "$STAMP_FILE")"
 mkdir -p "$STAMP_DIR"
-STAMP_FILE="$STAMP_DIR/hookify-verified.json"
 python3 - <<PY
 import json, time
 from pathlib import Path
@@ -54,9 +61,9 @@ HOOKS_OK=true
 openclaw doctor --non-interactive >/tmp/hookify_doctor.out 2>&1 || DOCTOR_OK=false
 openclaw plugins doctor >/tmp/hookify_plugins_doctor.out 2>&1 || PLUGINS_OK=false
 openclaw hooks check >/tmp/hookify_hooks_check.out 2>&1 || HOOKS_OK=false
-STAMP_DIR="/home/user/.openclaw/workspace/.enforcer"
+STAMP_FILE="${HOOKIFY_VERIFICATION_STAMP_PATH:-/home/user/.openclaw/workspace/.enforcer/hookify-verified.json}"
+STAMP_DIR="$(dirname "$STAMP_FILE")"
 mkdir -p "$STAMP_DIR"
-STAMP_FILE="$STAMP_DIR/hookify-verified.json"
 python3 - <<PY2
 import json, time
 from pathlib import Path
