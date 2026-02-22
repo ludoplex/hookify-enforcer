@@ -1,11 +1,56 @@
 {
   "id": "hookify-enforcer",
   "name": "Hookify Hard Enforcer",
-  "description": "Hard tool-sequence enforcement via before_tool_call",
-  "version": "0.1.0",
+  "description": "Configurable hard tool sequence enforcement using before_tool_call",
+  "version": "0.2.0",
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
-    "properties": {}
+    "properties": {
+      "enabled": {
+        "type": "boolean",
+        "default": true
+      },
+      "guardToolPattern": {
+        "type": "string",
+        "default": "opseq_guard\\\\.py"
+      },
+      "readMarkOp": {
+        "type": "string",
+        "default": "read-mark"
+      },
+      "mutateOps": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "default": [
+          "append",
+          "insert-after"
+        ]
+      },
+      "readTtlSec": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 1800
+      },
+      "cooldownSec": {
+        "type": "integer",
+        "minimum": 0,
+        "default": 20
+      },
+      "blockedExecRegexes": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
+      "allowExecRegexes": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
   }
 }
