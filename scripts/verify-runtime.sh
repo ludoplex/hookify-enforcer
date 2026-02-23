@@ -4,17 +4,33 @@ set -euo pipefail
 OUT="${1:-reports/hookify-runtime-verify-$(date +%Y%m%d-%H%M%S).md}"
 mkdir -p "$(dirname "$OUT")"
 
+if [ -n "${HOME-}" ]; then
+  DEFAULT_STAMP_PATH="$HOME/.openclaw/workspace/.enforcer/hookify-verified.json"
+else
+  DEFAULT_STAMP_PATH="/tmp/.openclaw/workspace/.enforcer/hookify-verified.json"
+fi
+STAMP_FILE="${2:-${HOOKIFY_VERIFICATION_STAMP_PATH:-$DEFAULT_STAMP_PATH}}"
+STAMP_DIR="$(dirname "$STAMP_FILE")"
+
+DOCTOR_OK=true
+PLUGINS_OK=true
+HOOKS_OK=true
+
+PLUGIN_INFO=$(openclaw plugins info hookify-enforcer 2>&1) || PLUGIN_INFO="(plugin info failed)"
+DOCTOR_OUT=$(openclaw doctor --non-interactive 2>&1) || DOCTOR_OK=false
+PLUGINS_DOCTOR_OUT=$(openclaw plugins doctor 2>&1) || PLUGINS_OK=false
+HOOKS_CHECK_OUT=$(openclaw hooks check 2>&1) || HOOKS_OK=false
+
 {
   echo "# Hookify Runtime Verification"
   echo
   echo "Generated: $(date -Is)"
   echo
   echo "## 1) Plugin discovery"
-  PLUGIN_INFO=$(openclaw plugins info hookify-enforcer 2>&1 || true)
   echo "$PLUGIN_INFO"
   echo
   echo "## 2) Doctor snapshot"
-  openclaw doctor --non-interactive || true
+  echo "$DOCTOR_OUT"
   echo
   echo "## 3) Hook registration check"
   echo "$PLUGIN_INFO" | grep -E "Hooks:" || true
@@ -35,43 +51,35 @@ mkdir -p "$(dirname "$OUT")"
   echo "## 4b) Runtime probe caveat"
   echo "- Direct shell probes validate OS-level write behavior, not agent hook interception path."
   echo "- Representative OpenClaw command executed for context:"
-  openclaw plugins info hookify-enforcer >/tmp/hookify_repr.out 2>&1 || true
-  sed -n "1,5p" /tmp/hookify_repr.out
-
+  echo "$PLUGIN_INFO" | sed -n "1,5p"
+  echo
   echo "## 5) Conclusion"
-  echo "- Plugin load/registration status is validated above."
-  echo "- Use this report to distinguish discovery/load failures from runtime path bypass issues."
+  if [ "$DOCTOR_OK" = true ] && [ "$PLUGINS_OK" = true ] && [ "$HOOKS_OK" = true ]; then
+    echo "- Verification checks passed."
+    echo "- Writing verification stamp to: $STAMP_FILE"
+  else
+    echo "- Verification checks failed."
+    echo "- doctorOk=$DOCTOR_OK pluginsDoctorOk=$PLUGINS_OK hooksCheckOk=$HOOKS_OK"
+    echo "- Stamp will NOT be written."
+  fi
 } > "$OUT"
 
 echo "$OUT"
 
-STAMP_FILE="${HOOKIFY_VERIFICATION_STAMP_PATH:-/home/user/.openclaw/workspace/.enforcer/hookify-verified.json}"
-STAMP_DIR="$(dirname "$STAMP_FILE")"
-mkdir -p "$STAMP_DIR"
-python3 - <<PY
-import json, time
-from pathlib import Path
-Path("$STAMP_FILE").write_text(json.dumps({"verifiedAtEpochSec": int(time.time())}, indent=2))
-print("stamp written:", "$STAMP_FILE")
-PY
-
-DOCTOR_OK=true
-PLUGINS_OK=true
-HOOKS_OK=true
-openclaw doctor --non-interactive >/tmp/hookify_doctor.out 2>&1 || DOCTOR_OK=false
-openclaw plugins doctor >/tmp/hookify_plugins_doctor.out 2>&1 || PLUGINS_OK=false
-openclaw hooks check >/tmp/hookify_hooks_check.out 2>&1 || HOOKS_OK=false
-STAMP_FILE="${HOOKIFY_VERIFICATION_STAMP_PATH:-/home/user/.openclaw/workspace/.enforcer/hookify-verified.json}"
-STAMP_DIR="$(dirname "$STAMP_FILE")"
-mkdir -p "$STAMP_DIR"
-python3 - <<PY2
+if [ "$DOCTOR_OK" = true ] && [ "$PLUGINS_OK" = true ] && [ "$HOOKS_OK" = true ]; then
+  mkdir -p "$STAMP_DIR"
+  python3 - <<PY2
 import json, time
 from pathlib import Path
 Path("$STAMP_FILE").write_text(json.dumps({
   "verifiedAtEpochSec": int(time.time()),
-  "doctorOk": "$DOCTOR_OK" == "true",
-  "pluginsDoctorOk": "$PLUGINS_OK" == "true",
-  "hooksCheckOk": "$HOOKS_OK" == "true"
+  "doctorOk": True,
+  "pluginsDoctorOk": True,
+  "hooksCheckOk": True
 }, indent=2))
 print("stamp written:", "$STAMP_FILE")
 PY2
+else
+  echo "verification failed; skipping stamp write" >&2
+  exit 1
+fi

@@ -96,6 +96,19 @@ function saveState(st: { readMarks: Record<string, number>; lastMutate: Record<s
 const normalizePath = (p: string) => path.resolve(p);
 const rxList = (patterns: string[]) => patterns.map((p) => new RegExp(p));
 
+function safeRxList(patterns: string[]): { regexes: RegExp[]; error?: string } {
+  const regexes: RegExp[] = [];
+  for (const pattern of patterns) {
+    try {
+      regexes.push(new RegExp(pattern));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { regexes: [], error: `Invalid regex pattern "${pattern}": ${msg}` };
+    }
+  }
+  return { regexes };
+}
+
 function parseGuardOp(cmd: string, cfg: Cfg): { op?: string; file?: string } {
   const esc = cfg.guardToolPattern;
   const capture = `(?:"([^\"]+)"|'([^']+)'|(\\S+))`;
@@ -136,7 +149,13 @@ function readVerification(stampPath: string): {ok:boolean; doctorOk?:boolean; pl
   try {
     const raw = fs.readFileSync(stampPath, "utf8");
     const parsed = JSON.parse(raw);
-    return { ok: true, doctorOk: !!parsed?.doctorOk, pluginsDoctorOk: !!parsed?.pluginsDoctorOk, hooksCheckOk: !!parsed?.hooksCheckOk, verifiedAtEpochSec: Number(parsed?.verifiedAtEpochSec ?? 0) };
+    return {
+      ok: true,
+      doctorOk: parsed?.doctorOk === true,
+      pluginsDoctorOk: parsed?.pluginsDoctorOk === true,
+      hooksCheckOk: parsed?.hooksCheckOk === true,
+      verifiedAtEpochSec: Number(parsed?.verifiedAtEpochSec ?? 0)
+    };
   } catch {
     return { ok: false };
   }
@@ -148,7 +167,9 @@ function verificationFresh(stampPath: string, maxAgeSec: number): boolean {
     const parsed = JSON.parse(raw);
     const ts = Number(parsed?.verifiedAtEpochSec ?? 0);
     if (!ts) return false;
-    return (Math.floor(Date.now()/1000) - ts) <= maxAgeSec;
+    const nowSec = Math.floor(Date.now()/1000);
+    if (ts > nowSec) return false;
+    return (nowSec - ts) <= maxAgeSec;
   } catch {
     return false;
   }
@@ -169,19 +190,24 @@ export default function register(api: any) {
       if (!cfg.enabled) return;
       if (event.toolName === "exec" && cfg.strictMode) {
         const cmdStrict = typeof event.params.command === "string" ? event.params.command : "";
-        const strictAllowed = rxList(cfg.strictAllowedExecRegexes);
+        const strictAllowed = safeRxList(cfg.strictAllowedExecRegexes);
+        if (strictAllowed.error) {
+          return { block: true, blockReason: `Blocked by hookify-enforcer strictMode: ${strictAllowed.error}` };
+        }
         const v = readVerification(cfg.verificationStampPath);
         const fresh = verificationFresh(cfg.verificationStampPath, cfg.verificationMaxAgeSec);
         const doctorOk = !cfg.strictRequireDoctorOk || v.doctorOk === true;
         const pluginsDoctorOk = !cfg.strictRequirePluginsDoctorOk || v.pluginsDoctorOk === true;
         const hooksCheckOk = !cfg.strictRequireHooksCheckOk || v.hooksCheckOk === true;
         const strictReady = v.ok && fresh && doctorOk && pluginsDoctorOk && hooksCheckOk;
-        if (!strictReady && !strictAllowed.some((r) => r.test(cmdStrict))) {
+        if (!strictReady && !strictAllowed.regexes.some((r) => r.test(cmdStrict))) {
           return { block: true, blockReason: "Blocked by hookify-enforcer strictMode: diagnostics/verification not satisfied." };
         }
       }
       if (event.toolName === "sessions_spawn" && cfg.requireVerificationForSpawn) {
-        if (!verificationFresh(cfg.verificationStampPath, cfg.verificationMaxAgeSec)) {
+        const v = readVerification(cfg.verificationStampPath);
+        const fresh = verificationFresh(cfg.verificationStampPath, cfg.verificationMaxAgeSec);
+        if (!v.ok || !fresh || v.doctorOk !== true || v.pluginsDoctorOk !== true || v.hooksCheckOk !== true) {
           return { block: true, blockReason: "Blocked by hookify-enforcer: sessions_spawn requires fresh verification stamp." };
         }
         return;
