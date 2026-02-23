@@ -148,7 +148,9 @@ function verificationFresh(stampPath: string, maxAgeSec: number): boolean {
     const parsed = JSON.parse(raw);
     const ts = Number(parsed?.verifiedAtEpochSec ?? 0);
     if (!ts) return false;
-    return (Math.floor(Date.now()/1000) - ts) <= maxAgeSec;
+    const nowSec = Math.floor(Date.now() / 1000);
+    if (ts > nowSec) return false;
+    return (nowSec - ts) <= maxAgeSec;
   } catch {
     return false;
   }
@@ -163,13 +165,19 @@ export default function register(api: any) {
   const msgAllow = rxList(cfg.messageAllowRegexes);
   const reasonBlock = rxList(cfg.blockReasoningRegexes);
 
+  let strictAllowed: RegExp[];
+  try {
+    strictAllowed = rxList(cfg.strictAllowedExecRegexes);
+  } catch {
+    strictAllowed = [];
+  }
+
   api.registerHook(
     "before_tool_call",
     (event: { toolName: string; params: Record<string, unknown> }) => {
       if (!cfg.enabled) return;
       if (event.toolName === "exec" && cfg.strictMode) {
         const cmdStrict = typeof event.params.command === "string" ? event.params.command : "";
-        const strictAllowed = rxList(cfg.strictAllowedExecRegexes);
         const v = readVerification(cfg.verificationStampPath);
         const fresh = verificationFresh(cfg.verificationStampPath, cfg.verificationMaxAgeSec);
         const doctorOk = !cfg.strictRequireDoctorOk || v.doctorOk === true;
@@ -181,7 +189,12 @@ export default function register(api: any) {
         }
       }
       if (event.toolName === "sessions_spawn" && cfg.requireVerificationForSpawn) {
-        if (!verificationFresh(cfg.verificationStampPath, cfg.verificationMaxAgeSec)) {
+        const v = readVerification(cfg.verificationStampPath);
+        const fresh = verificationFresh(cfg.verificationStampPath, cfg.verificationMaxAgeSec);
+        const doctorOk = !cfg.strictRequireDoctorOk || v.doctorOk === true;
+        const pluginsDoctorOk = !cfg.strictRequirePluginsDoctorOk || v.pluginsDoctorOk === true;
+        const hooksCheckOk = !cfg.strictRequireHooksCheckOk || v.hooksCheckOk === true;
+        if (!v.ok || !fresh || !doctorOk || !pluginsDoctorOk || !hooksCheckOk) {
           return { block: true, blockReason: "Blocked by hookify-enforcer: sessions_spawn requires fresh verification stamp." };
         }
         return;

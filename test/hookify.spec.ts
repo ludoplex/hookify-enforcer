@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterAll } from 'vitest';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import register from '../index.ts';
@@ -18,8 +19,9 @@ function setup(pluginConfig: Record<string, unknown> = {}) {
   return hooks;
 }
 
-const stampPath = '/home/user/.openclaw/workspace/.enforcer/hookify-verified.json';
-const statePath = '/home/user/.openclaw/workspace/.enforcer/opseq-state.json';
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hookify-test-'));
+const stampPath = path.join(tmpDir, 'hookify-verified.json');
+const statePath = path.join(tmpDir, 'opseq-state.json');
 
 function writeStamp(obj: any) {
   fs.mkdirSync(path.dirname(stampPath), { recursive: true });
@@ -29,6 +31,10 @@ function writeStamp(obj: any) {
 beforeEach(() => {
   try { fs.unlinkSync(stampPath); } catch {}
   try { fs.unlinkSync(statePath); } catch {}
+});
+
+afterAll(() => {
+  fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
 describe('strict mode', () => {
@@ -56,6 +62,27 @@ describe('sessions_spawn verification', () => {
   it('blocks sessions_spawn when verification is stale', () => {
     writeStamp({ verifiedAtEpochSec: 1, doctorOk: true, pluginsDoctorOk: true, hooksCheckOk: true });
     const hooks = setup({ requireVerificationForSpawn: true, verificationStampPath: stampPath, verificationMaxAgeSec: 1 });
+    const out = hooks.before_tool_call({ toolName: 'sessions_spawn', params: {} });
+    expect(out?.block).toBe(true);
+  });
+
+  it('blocks sessions_spawn when doctorOk is false even with fresh stamp', () => {
+    writeStamp({ verifiedAtEpochSec: Math.floor(Date.now()/1000), doctorOk: false, pluginsDoctorOk: true, hooksCheckOk: true });
+    const hooks = setup({ requireVerificationForSpawn: true, verificationStampPath: stampPath });
+    const out = hooks.before_tool_call({ toolName: 'sessions_spawn', params: {} });
+    expect(out?.block).toBe(true);
+  });
+
+  it('allows sessions_spawn when stamp is fresh and all checks pass', () => {
+    writeStamp({ verifiedAtEpochSec: Math.floor(Date.now()/1000), doctorOk: true, pluginsDoctorOk: true, hooksCheckOk: true });
+    const hooks = setup({ requireVerificationForSpawn: true, verificationStampPath: stampPath });
+    const out = hooks.before_tool_call({ toolName: 'sessions_spawn', params: {} });
+    expect(out).toBeUndefined();
+  });
+
+  it('blocks sessions_spawn when stamp has a future timestamp', () => {
+    writeStamp({ verifiedAtEpochSec: Math.floor(Date.now()/1000) + 9999, doctorOk: true, pluginsDoctorOk: true, hooksCheckOk: true });
+    const hooks = setup({ requireVerificationForSpawn: true, verificationStampPath: stampPath });
     const out = hooks.before_tool_call({ toolName: 'sessions_spawn', params: {} });
     expect(out?.block).toBe(true);
   });

@@ -84,7 +84,8 @@
         "default": false
       },
       "verificationStampPath": {
-        "type": "string"
+        "type": "string",
+        "default": "/tmp/hookify_verification_stamp"
       },
       "verificationMaxAgeSec": {
         "type": "integer",
