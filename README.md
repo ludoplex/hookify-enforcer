@@ -20,3 +20,33 @@ OpenClaw plugin that enforces hard tool-call sequencing for file mutation via `b
 ## License
 
 MIT
+
+## Templating and Auto-Scaffolding (Boilerplate Minimization)
+
+This repository now includes three boilerplate minimization paths:
+
+1. **Cookiecutter template**
+   - Config: `/tmp/hookify-enforcer/cookiecutter.json`
+   - Template root: `/tmp/hookify-enforcer/cookiecutter-plugin-template/`
+
+2. **Copier template**
+   - Config: `/tmp/hookify-enforcer/copier.yml`
+   - Template root: `/tmp/hookify-enforcer/copier-template/`
+
+3. **TypeScript policy scaffolder**
+   - Script: `/tmp/hookify-enforcer/scripts/scaffold-ts.mjs`
+   - Templates: `/tmp/hookify-enforcer/templates/policy/`
+   - NPM script: `npm run scaffold:policy --name=<policy-name>`
+
+### Examples
+
+```bash
+# Cookiecutter
+cookiecutter /tmp/hookify-enforcer/cookiecutter-plugin-template
+
+# Copier
+copier copy /tmp/hookify-enforcer /tmp/new-plugin
+
+# TS scaffold inside repo
+npm run scaffold:policy --name=a2a-enforcement
+```

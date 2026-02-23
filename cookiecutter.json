@@ -1,0 +1,9 @@
+{
+  "project_name": "OpenClaw Plugin",
+  "project_slug": "openclaw-plugin-example",
+  "plugin_id": "example-enforcer",
+  "plugin_name": "Example Enforcer",
+  "plugin_description": "Example hard policy plugin",
+  "author": "ludoplex",
+  "version": "0.1.0"
+}

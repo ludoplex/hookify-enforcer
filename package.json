@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "scaffold:policy": "node scripts/scaffold-ts.mjs --name=$npm_config_name"
   },
   "devDependencies": {
     "vitest": "^2.1.8"
