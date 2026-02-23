@@ -23,6 +23,8 @@ type Cfg = {
   strictRequireDoctorOk: boolean;
   strictRequirePluginsDoctorOk: boolean;
   strictRequireHooksCheckOk: boolean;
+  requireTrustedVerificationForSpawn: boolean;
+  trustedVerificationKeys: string[];
 };
 
 const ROOT = "/home/user/.openclaw/workspace";
@@ -71,7 +73,9 @@ function cfgFromPlugin(pluginConfig: Record<string, unknown> | undefined): Cfg {
     strictAllowedExecRegexes: (pc.strictAllowedExecRegexes as string[] | undefined) ?? ["^openclaw doctor\\b", "^openclaw plugins doctor\\b", "^openclaw hooks check\\b", "^scripts/verify-runtime\\.sh\\b"],
     strictRequireDoctorOk: (pc.strictRequireDoctorOk as boolean | undefined) ?? true,
     strictRequirePluginsDoctorOk: (pc.strictRequirePluginsDoctorOk as boolean | undefined) ?? true,
-    strictRequireHooksCheckOk: (pc.strictRequireHooksCheckOk as boolean | undefined) ?? true
+    strictRequireHooksCheckOk: (pc.strictRequireHooksCheckOk as boolean | undefined) ?? true,
+    requireTrustedVerificationForSpawn: (pc.requireTrustedVerificationForSpawn as boolean | undefined) ?? true,
+    trustedVerificationKeys: (pc.trustedVerificationKeys as string[] | undefined) ?? ["doctorOk", "pluginsDoctorOk", "hooksCheckOk"]
   };
 }
 
@@ -95,6 +99,19 @@ function saveState(st: { readMarks: Record<string, number>; lastMutate: Record<s
 
 const normalizePath = (p: string) => path.resolve(p);
 const rxList = (patterns: string[]) => patterns.map((p) => new RegExp(p));
+
+function compileRegexList(patterns: string[]): { regexes: RegExp[]; error?: string } {
+  const out: RegExp[] = [];
+  for (const p of patterns) {
+    try {
+      out.push(new RegExp(p));
+    } catch (e: any) {
+      return { regexes: [], error: `Invalid regex pattern: ${p} (${e?.message ?? "error"})` };
+    }
+  }
+  return { regexes: out };
+}
+
 
 function parseGuardOp(cmd: string, cfg: Cfg): { op?: string; file?: string } {
   const esc = cfg.guardToolPattern;
@@ -142,6 +159,16 @@ function readVerification(stampPath: string): {ok:boolean; doctorOk?:boolean; pl
   }
 }
 
+
+function verificationTrusted(stampPath: string, keys: string[]): boolean {
+  const v = readVerification(stampPath) as Record<string, unknown> & { ok?: boolean };
+  if (!v.ok) return false;
+  for (const k of keys) {
+    if (v[k] !== true) return false;
+  }
+  return true;
+}
+
 function verificationFresh(stampPath: string, maxAgeSec: number): boolean {
   try {
     const raw = fs.readFileSync(stampPath, "utf8");
@@ -156,12 +183,12 @@ function verificationFresh(stampPath: string, maxAgeSec: number): boolean {
 
 export default function register(api: any) {
   const cfg = cfgFromPlugin(api.pluginConfig);
-  const blocked = rxList(cfg.blockedExecRegexes);
-  const allowed = rxList(cfg.allowExecRegexes);
-  const required = rxList(cfg.execRequireRegexes);
-  const msgBlock = rxList(cfg.messageBlockRegexes);
-  const msgAllow = rxList(cfg.messageAllowRegexes);
-  const reasonBlock = rxList(cfg.blockReasoningRegexes);
+  const blockedC = compileRegexList(cfg.blockedExecRegexes);
+  const allowedC = compileRegexList(cfg.allowExecRegexes);
+  const requiredC = compileRegexList(cfg.execRequireRegexes);
+  const msgBlockC = compileRegexList(cfg.messageBlockRegexes);
+  const msgAllowC = compileRegexList(cfg.messageAllowRegexes);
+  const reasonBlockC = compileRegexList(cfg.blockReasoningRegexes);
 
   api.registerHook(
     "before_tool_call",
@@ -169,7 +196,11 @@ export default function register(api: any) {
       if (!cfg.enabled) return;
       if (event.toolName === "exec" && cfg.strictMode) {
         const cmdStrict = typeof event.params.command === "string" ? event.params.command : "";
-        const strictAllowed = rxList(cfg.strictAllowedExecRegexes);
+        const strictAllowedC = compileRegexList(cfg.strictAllowedExecRegexes);
+        if (strictAllowedC.error) {
+          return { block: true, blockReason: `Blocked by hookify-enforcer strictMode: ${strictAllowedC.error}` };
+        }
+        const strictAllowed = strictAllowedC.regexes;
         const v = readVerification(cfg.verificationStampPath);
         const fresh = verificationFresh(cfg.verificationStampPath, cfg.verificationMaxAgeSec);
         const doctorOk = !cfg.strictRequireDoctorOk || v.doctorOk === true;
@@ -181,8 +212,10 @@ export default function register(api: any) {
         }
       }
       if (event.toolName === "sessions_spawn" && cfg.requireVerificationForSpawn) {
-        if (!verificationFresh(cfg.verificationStampPath, cfg.verificationMaxAgeSec)) {
-          return { block: true, blockReason: "Blocked by hookify-enforcer: sessions_spawn requires fresh verification stamp." };
+        const fresh = verificationFresh(cfg.verificationStampPath, cfg.verificationMaxAgeSec);
+        const trusted = !cfg.requireTrustedVerificationForSpawn || verificationTrusted(cfg.verificationStampPath, cfg.trustedVerificationKeys);
+        if (!fresh || !trusted) {
+          return { block: true, blockReason: "Blocked by hookify-enforcer: sessions_spawn requires fresh + trusted verification stamp." };
         }
         return;
       }
@@ -190,7 +223,8 @@ export default function register(api: any) {
       const cmd = typeof event.params.command === "string" ? event.params.command : "";
       if (!cmd) return;
 
-      if (allowed.some((r) => r.test(cmd))) return;
+      if (allowedC.error) return { block: true, blockReason: `Blocked by hookify-enforcer: ${allowedC.error}` };
+      if (allowedC.regexes.some((r) => r.test(cmd))) return;
 
       const op = parseGuardOp(cmd, cfg);
       const now = Math.floor(Date.now() / 1000);
@@ -219,12 +253,14 @@ export default function register(api: any) {
       }
 
       if (cfg.enforceAllExec) {
-        if (required.length > 0 && !required.every((r) => r.test(cmd))) {
+        if (requiredC.error) return { block: true, blockReason: `Blocked by hookify-enforcer: ${requiredC.error}` };
+        if (requiredC.regexes.length > 0 && !requiredC.regexes.every((r) => r.test(cmd))) {
           return { block: true, blockReason: "Blocked by hookify-enforcer: exec missing required regex conditions." };
         }
       }
 
-      if (blocked.some((r) => r.test(cmd))) {
+      if (blockedC.error) return { block: true, blockReason: `Blocked by hookify-enforcer: ${blockedC.error}` };
+      if (blockedC.regexes.some((r) => r.test(cmd))) {
         return { block: true, blockReason: "Blocked by hookify-enforcer: exec command matched blocked patterns." };
       }
     },
@@ -237,11 +273,14 @@ export default function register(api: any) {
       if (!cfg.enabled) return;
       const text = msgToText(event.message);
       if (!text) return;
-      if (msgAllow.some((r) => r.test(text))) return;
-      if (msgBlock.some((r) => r.test(text))) {
+      if (msgAllowC.error) return { block: true };
+      if (msgBlockC.error) return { block: true };
+      if (reasonBlockC.error) return { block: true };
+      if (msgAllowC.regexes.some((r) => r.test(text))) return;
+      if (msgBlockC.regexes.some((r) => r.test(text))) {
         return { block: true };
       }
-      if (reasonBlock.some((r) => r.test(text))) {
+      if (reasonBlockC.regexes.some((r) => r.test(text))) {
         return { block: true };
       }
     },

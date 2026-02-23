@@ -61,10 +61,26 @@ HOOKS_OK=true
 openclaw doctor --non-interactive >/tmp/hookify_doctor.out 2>&1 || DOCTOR_OK=false
 openclaw plugins doctor >/tmp/hookify_plugins_doctor.out 2>&1 || PLUGINS_OK=false
 openclaw hooks check >/tmp/hookify_hooks_check.out 2>&1 || HOOKS_OK=false
+
+if [ "$DOCTOR_OK" != "true" ] || [ "$PLUGINS_OK" != "true" ] || [ "$HOOKS_OK" != "true" ]; then
+  echo "verification failed: refusing to write trusted stamp" >&2
+  exit 2
+fi
+
 STAMP_FILE="${HOOKIFY_VERIFICATION_STAMP_PATH:-/home/user/.openclaw/workspace/.enforcer/hookify-verified.json}"
 STAMP_DIR="$(dirname "$STAMP_FILE")"
 mkdir -p "$STAMP_DIR"
 python3 - <<PY2
+import json, time
+from pathlib import Path
+Path("$STAMP_FILE").write_text(json.dumps({
+  "verifiedAtEpochSec": int(time.time()),
+  "doctorOk": True,
+  "pluginsDoctorOk": True,
+  "hooksCheckOk": True
+}, indent=2))
+print("stamp written:", "$STAMP_FILE")
+PY2
 import json, time
 from pathlib import Path
 Path("$STAMP_FILE").write_text(json.dumps({

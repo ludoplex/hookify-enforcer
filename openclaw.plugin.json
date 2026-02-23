@@ -118,6 +118,21 @@
       "strictRequireHooksCheckOk": {
         "type": "boolean",
         "default": true
+      },
+      "requireTrustedVerificationForSpawn": {
+        "type": "boolean",
+        "default": true
+      },
+      "trustedVerificationKeys": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "default": [
+          "doctorOk",
+          "pluginsDoctorOk",
+          "hooksCheckOk"
+        ]
       }
     }
   }

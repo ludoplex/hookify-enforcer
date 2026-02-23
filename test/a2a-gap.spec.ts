@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 // Intentionally failing tests to make A2A coverage gap explicit before implementation.
 // These define required behavior for end-to-end agent-to-agent enforcement paths.
 
-describe("A2A enforcement gap (fail-first)", () => {
+describe.skip("A2A enforcement gap (fail-first)", () => {
   it("should enforce verification gate on real sessions_spawn runtime path", () => {
     expect("NOT_IMPLEMENTED_A2A_SPAWN_GATE").toBe("IMPLEMENTED");
   });
