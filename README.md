@@ -1,22 +1,26 @@
 # hookify-enforcer
 
-OpenClaw plugin that enforces hard tool-call sequencing for file mutation via `before_tool_call`.
+`hookify-enforcer` is an OpenClaw plugin that registers `before_tool_call` and `before_message_write` hooks to enforce configurable guardrails.
 
-## What it enforces
+## Current behavior
 
-- Mutation-like `exec` commands are blocked unless using guarded sequence.
-- Required sequence:
-  1. `opseq_guard.py read-mark <file>`
-  2. `opseq_guard.py append ...` or `opseq_guard.py insert-after ...`
-- Read-mark TTL and cooldown are enforced via env vars:
-  - `OPSEQ_READ_TTL_SEC` (default: 1800)
-  - `OPSEQ_COOLDOWN_SEC` (default: 20)
+### `before_tool_call` (`exec`)
+- Tracks guarded file mutations through `opseq_guard.py` operations.
+- Requires a fresh read-mark before configured mutate operations (`append`, `insert-after` by default).
+- Applies per-file cooldown between mutate operations.
+- Optionally enforces required regex conditions for all `exec` commands (`enforceAllExec` + `execRequireRegexes`).
+- Blocks risky `exec` commands using configurable regex blocklists, with optional allowlist overrides.
 
-## Plugin files
+### `before_message_write`
+- Supports configurable message block/allow regexes.
+- Supports configurable reasoning-text block regexes.
 
-- `openclaw.plugin.json`
-- `index.ts`
+## State and config notes
+- Default state file: `/home/user/.openclaw/workspace/.enforcer/opseq-state.json`
+- Environment overrides:
+  - `OPSEQ_READ_TTL_SEC` (default: `1800`)
+  - `OPSEQ_COOLDOWN_SEC` (default: `20`)
+- Plugin config schema is defined in `openclaw.plugin.json`.
 
 ## License
-
 MIT
