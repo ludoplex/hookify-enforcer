@@ -78,6 +78,61 @@
         "items": {
           "type": "string"
         }
+      },
+      "requireVerificationForSpawn": {
+        "type": "boolean",
+        "default": false
+      },
+      "verificationStampPath": {
+        "type": "string"
+      },
+      "verificationMaxAgeSec": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 3600
+      },
+      "strictMode": {
+        "type": "boolean",
+        "default": false
+      },
+      "strictAllowedExecRegexes": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "default": [
+          "^openclaw doctor\\b",
+          "^openclaw plugins doctor\\b",
+          "^openclaw hooks check\\b",
+          "^scripts/verify-runtime\\.sh\\b"
+        ]
+      },
+      "strictRequireDoctorOk": {
+        "type": "boolean",
+        "default": true
+      },
+      "strictRequirePluginsDoctorOk": {
+        "type": "boolean",
+        "default": true
+      },
+      "strictRequireHooksCheckOk": {
+        "type": "boolean",
+        "default": true
+      },
+      "requireTrustedVerificationForSpawn": {
+        "type": "boolean",
+        "default": true
+      },
+      "trustedVerificationKeys": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "default": [
+          "doctorOk",
+          "pluginsDoctorOk",
+          "hooksCheckOk"
+        ]
       }
     }
   }

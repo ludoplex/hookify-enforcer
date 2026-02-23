@@ -1,0 +1,14 @@
+{
+  "name": "hookify-enforcer",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "scaffold:policy": "node scripts/scaffold-ts.mjs --name=$npm_config_name",
+    "test:gap": "vitest run test/a2a-gap.spec.ts"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8"
+  }
+}

@@ -1,0 +1,23 @@
+_min_copier_version: "9.0.0"
+_subdirectory: "copier-template"
+project_name:
+  type: str
+  default: OpenClaw Plugin
+project_slug:
+  type: str
+  default: openclaw-plugin-example
+plugin_id:
+  type: str
+  default: example-enforcer
+plugin_name:
+  type: str
+  default: Example Enforcer
+plugin_description:
+  type: str
+  default: Example hard policy plugin
+author:
+  type: str
+  default: ludoplex
+version:
+  type: str
+  default: 0.1.0

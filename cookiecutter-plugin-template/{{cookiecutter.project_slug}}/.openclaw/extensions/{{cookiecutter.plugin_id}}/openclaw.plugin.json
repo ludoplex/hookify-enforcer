@@ -1,0 +1,11 @@
+{
+  "id": "{{ cookiecutter.plugin_id }}",
+  "name": "{{ cookiecutter.plugin_name }}",
+  "description": "{{ cookiecutter.plugin_description }}",
+  "version": "{{ cookiecutter.version }}",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {}
+  }
+}
